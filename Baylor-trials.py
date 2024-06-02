@@ -1,6 +1,7 @@
 import streamlit as st
 from dotenv import load_dotenv
 import os
+import pandas as pd
 from PyPDF2 import PdfReader
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -17,7 +18,7 @@ def setup_response_parser():
     response_schemas = [
         ResponseSchema(name="T Staging", description="Extract the T staging: (T) Staging:"),
         ResponseSchema(name="N Staging", description="Extract the N staging: (N) Staging:"),
-        ResponseSchema(name="ER Status", description="Extract the ER status: (ER) Status:"),
+        ResponseSchema(name="HR Status", description="Extract the HR status: (ER) Status:"),
         ResponseSchema(name="HER2 Presence", description="Extract the HER2 presence: HER2 Presence:"),
         ResponseSchema(name="Metastasis Status", description="Extract the Metastasis Presence: Metastasis Presence:"),
     ]
@@ -57,14 +58,14 @@ def create_prompt_template(text, format_instructions):
         - cN3b: cancer cells in the lymph nodes around the armpit and behind the breastbone
         - cN3c: cancer cells in the lymph nodes above the collarbone
 
-    3. ER Presence will be detailed in the biopsy or final surgery pathology report. It will mention Allred score, but you can just report either POSITIVE or NEGATIVE.
+    3. HR Presence will be detailed in the biopsy or final surgery pathology report. It will mention Allred score, but you can just report either POSITIVE or NEGATIVE.
     4. HER2 Presence: Immunohistochemistry (IHC) will be reported as POSITIVE (3+) or NEGATIVE (0 or 1+). Occasionally it can be 2+, then use FISH report to determine if POSITIVE or NEGATIVE.
 
     If the information is insufficient, please indicate that not enough information is present.
     Format your response as follows:
     (T) Staging: [Your Response Here]
     (N) Staging: [Your Response Here]
-    (ER) Status: [Your Response Here]
+    (HR) Status: [Your Response Here]
     HER2 Status: [Your Response Here]
     Metastasis Status: [Your Response Here]
 
@@ -92,6 +93,15 @@ def handle_input(label, key_prefix):
     file = st.file_uploader(f"Upload {label}", type=["pdf", "docx", "txt"], key=f"{key_prefix}_file")
     text = st.text_area(f"Or input {label} text", key=f"{key_prefix}_text")
     return file, text
+
+def filter_clinical_trials(df, er_status, her2_status, type):
+    """Filter clinical trials based on ER Status, HER2 Presence, and type."""
+    filtered_df = df[
+        (df['HR'] == er_status) &
+        (df['HER2'] == her2_status) &
+        (df['TYPE'] == type)
+    ]
+    return filtered_df
 
 def main():
     load_dotenv()
@@ -128,12 +138,12 @@ def main():
 
     if metastasis == "Yes":
         full_text += " Metastasis is present."
-        space = "Metastatic"
+        type = "Metastatic"
     elif has_surgical == "Yes":
-        space = "Adjuvant"
+        type = "Adjuvant"
         full_text += " Metastasis is not present."
     else:
-        space = "Neoadjuvant"
+        type = "Neoadjuvant"
         full_text += " Metastasis is not present."
 
     if full_text.strip():
@@ -143,16 +153,33 @@ def main():
             response = chat_client.invoke(patient_notes)
             if response:
                 parsed_results = parser.parse(response.content)
-                parsed_results['space'] = space
+                parsed_results['type'] = type
                 st.session_state['result'] = parsed_results  # Store structured results
+
+                # Load clinical trials data
+                csv_path = '/Users/ahmed-elbakri/Downloads/Python/Ops Analytics/Clinical Trials/bcm.trial.data - Sheet1.csv'
+                df_trials = pd.read_csv(csv_path)
+
+                # Filter clinical trials
+                filtered_trials = filter_clinical_trials(
+                    df_trials,
+                    parsed_results["HR Status"],
+                    parsed_results["HER2 Presence"],
+                    parsed_results["type"]
+                )
+                
+                # Display filtered trials
+                if not filtered_trials.empty:
+                    st.header("Matched Clinical Trials:")
+                    st.dataframe(filtered_trials)
+                else:
+                    st.write("No matching clinical trials found.")
             else:
                 st.error("No response from the model, please check your inputs and API settings.")
-        else:
-            st.error("Please click 'Find Matching Clinical Trials' to proceed.")
     else:
         st.write("Please provide the necessary patient data to proceed.")
 
-    st.header("Matched Clinical Trials")
+    st.header("Diagnosis Summary")
     if 'result' in st.session_state:
         st.write("Results:")
         st.json(st.session_state['result'])  # Display parsed results as formatted JSON
