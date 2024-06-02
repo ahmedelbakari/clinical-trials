@@ -7,8 +7,10 @@ from langchain_openai import ChatOpenAI
 from langchain.output_parsers import ResponseSchema, StructuredOutputParser
 
 # Load environment variables
-load_dotenv()
-api_key = os.getenv('OPENAI_API_KEY')
+headers = {
+    "authorization": st.secrets["auth_key"],
+    "content_type": "application/json"
+}
 
 def setup_response_parser():
     """Create and return structured output parsers and format instructions."""
