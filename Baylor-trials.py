@@ -153,7 +153,7 @@ def main():
                 st.session_state['result'] = parsed_results  # Store structured results
 
                 # Load clinical trials data
-                csv_path = '/Users/ahmed-elbakri/Downloads/Python/Ops Analytics/Clinical Trials/bcm.trial.data - Sheet1.csv'
+                csv_path = 'bcm.trial.data - Sheet1.csv'
                 df_trials = pd.read_csv(csv_path)
 
                 # Filter clinical trials
