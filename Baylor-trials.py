@@ -7,11 +7,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain.output_parsers import ResponseSchema, StructuredOutputParser
 
-# Load environment variables
-headers = {
-    "authorization": st.secrets["auth_key"],
-    "content_type": "application/json"
-}
+api_key = st.secrets["OPENAI_API_KEY"]
 
 def setup_response_parser():
     """Create and return structured output parsers and format instructions."""
