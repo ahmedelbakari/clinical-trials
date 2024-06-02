@@ -56,7 +56,8 @@ def create_prompt_template(text, format_instructions):
 
     3. HR Presence will be detailed in the biopsy or final surgery pathology report. It will mention Allred score, but you can just report either POSITIVE or NEGATIVE.
     4. HER2 Presence: Immunohistochemistry (IHC) will be reported as POSITIVE (3+) or NEGATIVE (0 or 1+). Occasionally it can be 2+, then use FISH report to determine if POSITIVE or NEGATIVE.
-
+    5. Extract Metastasis Status.
+    
     If the information is insufficient, please indicate that not enough information is present.
     Format your response as follows:
     (T) Staging: [Your Response Here]
