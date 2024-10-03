@@ -11,7 +11,6 @@ import re
 
 # Load environment variables
 load_dotenv()
-api_key = os.getenv('OPENAI_API_KEY')
 
 def setup_response_parser():
     """Create and return structured output parsers and format instructions."""
@@ -76,9 +75,13 @@ def create_prompt_template(text, format_instructions):
     prompt_template = ChatPromptTemplate.from_template(template_string)
     return prompt_template.format_messages(text=text, format_instructions=format_instructions)
 
-def initialize_chat_client(api_key, model="gpt-4", temperature=0.0):
-    """ Initialize the chat client with specified parameters. """
-    return ChatOpenAI(api_key=api_key, temperature=temperature, model=model)
+def initialize_chat_client(api_key, model="gpt-3.5-turbo", temperature=0.0):
+    """ Initialize the chat client with specified parameters and error handling. """
+    try:
+        return ChatOpenAI(api_key=api_key, temperature=temperature, model=model)
+    except Exception as e:
+        st.error(f"Error initializing ChatOpenAI: {str(e)}")
+        return None
 
 def extract_text_from_pdf(pdf_file):
     """ Extract text from each page of the provided PDF file. """
@@ -131,12 +134,37 @@ def parse_json_like(text):
         # If it still fails, raise an exception with details
         raise ValueError(f"Failed to parse JSON-like string: {str(e)}\nProcessed text: {text}")
 
-def main():
-    load_dotenv()
-    api_key = os.getenv('OPENAI_API_KEY')
 
+def get_api_key():
+    """
+    Retrieve the API key from environment variables or Streamlit secrets.
+    Returns None if the key is not found.
+    """
+    # First, try to get the API key from environment variables
+    api_key = os.getenv('OPENAI_API_KEY')
+    
+    # If not found in environment variables, try Streamlit secrets
+    if not api_key:
+        try:
+            api_key = st.secrets["OPENAI_API_KEY"]
+        except FileNotFoundError:
+            # Secrets file not found, which is expected in local development
+            pass
+        except KeyError:
+            # OPENAI_API_KEY not in secrets
+            pass
+    
+    return api_key
+
+def main():
     st.title('Clinical Trial Matcher')
     parser, format_instructions = setup_response_parser()
+
+    api_key = get_api_key()
+
+    if not api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable or add it to your Streamlit secrets.")
+        return
 
     with st.sidebar:
         st.header("Patient Data Input")
@@ -178,6 +206,10 @@ def main():
         patient_notes = create_prompt_template(full_text, format_instructions)
         if st.button("Find Matching Clinical Trials"):
             chat_client = initialize_chat_client(api_key)
+            if chat_client is None:
+                st.error("Failed to initialize chat client. Please check your API key and try again.")
+                return
+
             response = chat_client.invoke(patient_notes)
             if response:
                 try:
@@ -187,7 +219,7 @@ def main():
                     st.session_state['result'] = parsed_results  # Store structured results
 
                     # Load clinical trials data
-                    csv_path = '/Users/ahmed-elbakri/Downloads/Python/Ops Analytics/Clinical Trials/bcm.trial.data - Sheet1.csv'
+                    csv_path = 'bcm.trial.data - Sheet1.csv'  # Update this path for Streamlit Cloud
                     df_trials = pd.read_csv(csv_path)
 
                     # Filter clinical trials
