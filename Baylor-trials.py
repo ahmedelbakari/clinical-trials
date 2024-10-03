@@ -6,8 +6,12 @@ from PyPDF2 import PdfReader
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain.output_parsers import ResponseSchema, StructuredOutputParser
+import json
+import re
 
-api_key = st.secrets["OPENAI_API_KEY"]
+# Load environment variables
+load_dotenv()
+api_key = os.getenv('OPENAI_API_KEY')
 
 def setup_response_parser():
     """Create and return structured output parsers and format instructions."""
@@ -56,8 +60,8 @@ def create_prompt_template(text, format_instructions):
 
     3. HR Presence will be detailed in the biopsy or final surgery pathology report. It will mention Allred score, but you can just report either POSITIVE or NEGATIVE.
     4. HER2 Presence: Immunohistochemistry (IHC) will be reported as POSITIVE (3+) or NEGATIVE (0 or 1+). Occasionally it can be 2+, then use FISH report to determine if POSITIVE or NEGATIVE.
-    5. Extract Metastasis Status.
-    
+    5. Extract the metastasis status
+
     If the information is insufficient, please indicate that not enough information is present.
     Format your response as follows:
     (T) Staging: [Your Response Here]
@@ -72,7 +76,7 @@ def create_prompt_template(text, format_instructions):
     prompt_template = ChatPromptTemplate.from_template(template_string)
     return prompt_template.format_messages(text=text, format_instructions=format_instructions)
 
-def initialize_chat_client(api_key, model="gpt-4o", temperature=0.0):
+def initialize_chat_client(api_key, model="gpt-4", temperature=0.0):
     """ Initialize the chat client with specified parameters. """
     return ChatOpenAI(api_key=api_key, temperature=temperature, model=model)
 
@@ -99,6 +103,33 @@ def filter_clinical_trials(df, er_status, her2_status, type):
         (df['TYPE'] == type)
     ]
     return filtered_df
+
+def parse_json_like(text):
+    # Remove any leading/trailing whitespace
+    text = text.strip()
+    
+    # Remove any markdown code block indicators
+    text = re.sub(r'```json\s*|\s*```', '', text)
+    
+    # Attempt to parse as-is first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    
+    # If that fails, try to fix common issues
+    # Enclose property names in double quotes if they're not already
+    text = re.sub(r'(\w+)(?=\s*:)', r'"\1"', text)
+    
+    # Replace single quotes with double quotes
+    text = text.replace("'", '"')
+    
+    # Try to parse again
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # If it still fails, raise an exception with details
+        raise ValueError(f"Failed to parse JSON-like string: {str(e)}\nProcessed text: {text}")
 
 def main():
     load_dotenv()
@@ -149,28 +180,34 @@ def main():
             chat_client = initialize_chat_client(api_key)
             response = chat_client.invoke(patient_notes)
             if response:
-                parsed_results = parser.parse(response.content)
-                parsed_results['type'] = type
-                st.session_state['result'] = parsed_results  # Store structured results
+                try:
+                    # Use the new parsing function
+                    parsed_results = parse_json_like(response.content)
+                    parsed_results['type'] = type
+                    st.session_state['result'] = parsed_results  # Store structured results
 
-                # Load clinical trials data
-                csv_path = 'bcm.trial.data - Sheet1.csv'
-                df_trials = pd.read_csv(csv_path)
+                    # Load clinical trials data
+                    csv_path = '/Users/ahmed-elbakri/Downloads/Python/Ops Analytics/Clinical Trials/bcm.trial.data - Sheet1.csv'
+                    df_trials = pd.read_csv(csv_path)
 
-                # Filter clinical trials
-                filtered_trials = filter_clinical_trials(
-                    df_trials,
-                    parsed_results["HR Status"],
-                    parsed_results["HER2 Presence"],
-                    parsed_results["type"]
-                )
-                
-                # Display filtered trials
-                if not filtered_trials.empty:
-                    st.header("Matched Clinical Trials:")
-                    st.dataframe(filtered_trials)
-                else:
-                    st.write("No matching clinical trials found.")
+                    # Filter clinical trials
+                    filtered_trials = filter_clinical_trials(
+                        df_trials,
+                        parsed_results["HR Status"],
+                        parsed_results["HER2 Presence"],
+                        parsed_results["type"]
+                    )
+                    
+                    # Display filtered trials
+                    if not filtered_trials.empty:
+                        st.header("Matched Clinical Trials:")
+                        st.dataframe(filtered_trials)
+                    else:
+                        st.write("No matching clinical trials found.")
+                except Exception as e:
+                    st.error(f"Error parsing model response: {str(e)}")
+                    st.write("Raw model response:")
+                    st.write(response.content)
             else:
                 st.error("No response from the model, please check your inputs and API settings.")
     else:
